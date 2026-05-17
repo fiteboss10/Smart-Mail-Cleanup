@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Smart Mail Cleanup</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <img src="icons/logo.png" class="header-logo" alt="Smart Mail Cleanup">
+    <div class="header-text">
+      <h1>Smart Mail Cleanup <span id="header-version" class="header-version"></span></h1>
+      <p class="subtitle">Bulk-delete emails by sender and age</p>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ══ Shared Folder Selector ══════════════════════════════ -->
+  <div class="card folder-selector-card">
+    <div class="folder-selector-header">
+      <div class="folder-selector-title">
+        <strong>📂 Folders to scan</strong>
+        <span id="folder-selection-summary" class="muted">— click Load to choose</span>
+      </div>
+      <div class="folder-selector-controls">
+        <label class="checkbox-label">
+          <input type="checkbox" id="skip-special" checked>
+          Skip Trash / Junk / Sent / Drafts
+        </label>
+        <button id="btn-load-folders" class="btn-secondary">Load Folders</button>
+      </div>
+    </div>
+
+    <div id="folder-loading" style="display:none; margin-top:10px">
+      <div class="progress-text" style="font-size:13px;color:#64748b;margin-bottom:8px">Finding folders…</div>
+      <div class="progress-bar"><div id="folder-loading-fill"></div></div>
+    </div>
+
+    <div id="folder-list-area" style="display:none; margin-top:10px">
+      <div class="table-container" style="max-height:160px">
+        <table>
+          <thead><tr>
+            <th class="col-chk">Scan</th>
+            <th>Folder</th>
+            <th class="col-count" style="font-size:11px">Account</th>
+          </tr></thead>
+          <tbody id="folder-tbody"></tbody>
+        </table>
+      </div>
+      <div class="folder-select-footer">
+        <label class="checkbox-label">
+          <input type="checkbox" id="select-all-folders" checked> Select all
+        </label>
+        <span id="folders-selected-count" class="muted"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Tabs ════════════════════════════════════════════════ -->
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="discover">🔍 Discover Senders</button>
+    <button class="tab-btn"        data-tab="rules">📋 My Rules</button>
+    <button class="tab-btn"        data-tab="run">▶ Run</button>
+    <button class="tab-btn"        data-tab="help">❓ Help</button>
+  </nav>
+
+  <div class="tab-body">
+
+    <!-- ═══════════════════════════════════════ DISCOVER ══ -->
+    <section id="tab-discover" class="tab-content active">
+
+      <div class="toolbar card">
+        <span class="muted" style="font-size:13px">
+          Scans the selected folders above to build a unique sender list
+        </span>
+        <div class="toolbar-right">
+          <button id="btn-cancel-scan" class="btn-secondary" style="display:none">⏹ Cancel</button>
+          <button id="btn-scan" class="btn-primary">🔍 Scan Folders</button>
+        </div>
+      </div>
+
+      <div id="scan-progress" class="card progress-card" style="display:none">
+        <div id="progress-text" class="progress-text">Scanning…</div>
+        <div class="progress-bar"><div id="progress-fill"></div></div>
+      </div>
+
+      <div id="discover-controls" style="display:none">
+        <div class="search-sort-bar card">
+          <input type="search" id="discover-search" placeholder="Filter by domain…">
+          <select id="discover-sort">
+            <option value="new-first">New senders first (A→Z within group)</option>
+            <option value="count-desc">Most messages first</option>
+            <option value="count-asc">Fewest messages first</option>
+            <option value="name-asc">Domain A → Z</option>
+            <option value="name-desc">Domain Z → A</option>
+          </select>
+          <label class="checkbox-label ml-auto">
+            <input type="checkbox" id="select-all-senders"> Select all visible
+          </label>
+        </div>
+
+        <div class="table-container card">
+          <table id="discover-table">
+            <thead>
+              <tr>
+                <th class="col-chk">Include</th>
+                <th class="col-sender">Sender Domain</th>
+                <th class="col-count">Messages</th>
+                <th class="col-match">Match</th>
+                <th class="col-agechk">Age-Based</th>
+                <th class="col-age">Age (days)</th>
+              </tr>
+            </thead>
+            <tbody id="discover-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="action-bar">
+          <span id="selected-count" class="muted">0 selected</span>
+          <button id="btn-add-to-rules" class="btn-primary">➕ Add Selected to Rules</button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ══════════════════════════════════════════ RULES ══ -->
+    <section id="tab-rules" class="tab-content">
+
+      <div class="card settings-panel">
+        <h3>Global Settings</h3>
+        <div class="settings-grid">
+
+          <label class="setting-label">Default delete age</label>
+          <div class="setting-control">
+            <input type="number" id="default-age" min="1" max="3650" value="30">
+            <span class="hint">days — used for any age-based rule with no per-sender override</span>
+          </div>
+
+          <label class="setting-label">On delete</label>
+          <div class="setting-control">
+            <select id="delete-behavior">
+              <option value="trash">Move to Trash (recommended)</option>
+              <option value="found">Move to Found folder (per account)</option>
+              <option value="permanent">Permanently delete</option>
+            </select>
+          </div>
+
+          <label class="setting-label">Auto-run</label>
+          <div class="setting-control">
+            <label class="checkbox-label">
+              <input type="checkbox" id="auto-run">
+              Apply rules automatically when Thunderbird starts
+            </label>
+          </div>
+
+          <label class="setting-label">Exclude keywords</label>
+          <div class="setting-control setting-control-col">
+            <span class="hint">Skip any message whose subject contains one of these words (case-insensitive). Press Enter or comma to add.</span>
+            <div class="keyword-input-row">
+              <input type="text" id="keyword-input" placeholder="e.g. invoice" autocomplete="off">
+              <button id="btn-add-keyword" class="btn-secondary">Add</button>
+            </div>
+            <div id="keyword-tags" class="keyword-tags"></div>
+          </div>
+
+        </div>
+        <button id="btn-save-settings" class="btn-secondary mt-8">💾 Save Settings</button>
+      </div>
+
+      <div class="rules-header">
+        <h3>Rules <span class="badge" id="rules-count">0</span></h3>
+        <div class="rules-header-actions">
+          <button id="btn-export-rules" class="btn-secondary">📤 Export JSON</button>
+          <button id="btn-import-rules" class="btn-secondary">📥 Import JSON</button>
+          <button id="btn-clear-rules"  class="btn-danger">🗑 Clear All</button>
+        </div>
+      </div>
+
+      <div class="card table-container" id="rules-table-wrap">
+        <table id="rules-table">
+          <thead>
+            <tr>
+              <th class="col-chk">On</th>
+              <th class="col-sender">Sender / Address</th>
+              <th class="col-match">Match</th>
+              <th class="col-agechk">Age-Based</th>
+              <th class="col-age">Age (days)</th>
+              <th class="col-attach" title="Skip messages that have attachments">📎</th>
+              <th class="col-del">Remove</th>
+            </tr>
+          </thead>
+          <tbody id="rules-tbody"></tbody>
+        </table>
+      </div>
+      <div id="no-rules-msg" class="empty-state">
+        No rules yet — use the <strong>Discover</strong> tab to find senders, then add them here.
+      </div>
+
+    </section>
+
+    <!-- ════════════════════════════════════════════ RUN ══ -->
+    <section id="tab-run" class="tab-content">
+
+      <div class="card run-panel">
+        <h3>Ready to run</h3>
+        <div class="run-info">
+          <div class="run-stat"><span class="stat-value" id="enabled-rules-count">0</span><span class="stat-label">enabled rules</span></div>
+          <div class="run-stat"><span class="stat-value" id="run-behavior">Trash</span><span class="stat-label">delete mode</span></div>
+          <div class="run-stat"><span class="stat-value" id="run-folder-stat">—</span><span class="stat-label">folders selected</span></div>
+        </div>
+        <div class="run-buttons">
+          <button id="btn-dry-run" class="btn-secondary btn-large">
+            <span class="btn-icon">🔍</span>
+            <span class="btn-text">Dry Run</span>
+            <span class="btn-sub">Preview — nothing is deleted</span>
+          </button>
+          <button id="btn-run" class="btn-danger btn-large">
+            <span class="btn-icon">▶</span>
+            <span class="btn-text">Run Now</span>
+            <span class="btn-sub">Apply all enabled rules</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="run-progress" class="card progress-card" style="display:none">
+        <div id="run-progress-text" class="progress-text">Running…</div>
+        <div class="progress-bar"><div id="run-progress-fill"></div></div>
+      </div>
+
+      <div id="run-results" class="card" style="display:none">
+        <h3 id="results-title">Results</h3>
+        <div id="results-summary" class="results-summary"></div>
+        <div class="table-container">
+          <table id="results-table">
+            <thead>
+              <tr>
+                <th>Sender</th>
+                <th class="col-count">Messages</th>
+                <th class="col-expand"></th>
+              </tr>
+            </thead>
+            <tbody id="results-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ══════════════════════════════════════════════ HELP ══ -->
+    <section id="tab-help" class="tab-content">
+      <div class="card help-card">
+
+        <div class="help-section">
+          <h2>Smart Mail Cleanup &mdash; How to Use</h2>
+          <p>This extension bulk-moves or deletes emails by sender domain or specific address. Scan selected folders, build rules, preview with Dry Run, then act. Your rules are stored locally in Thunderbird and never leave your computer.</p>
+        </div>
+
+        <div class="help-section">
+          <h3>&#128194; Step 1 &mdash; Load Folders</h3>
+          <p>The <strong>Folders to Scan</strong> bar at the top loads automatically on open. On first use all folders are unchecked &mdash; you must deliberately select which ones to scan before anything else works.</p>
+          <ul class="help-list">
+            <li>Check <strong>Skip Trash / Junk / Sent / Drafts</strong> to exclude those folder types automatically.</li>
+            <li>Click <strong>Load Folders</strong> to refresh after adding accounts or creating new folders.</li>
+            <li><strong>Scan Folders</strong>, <strong>Dry Run</strong>, and <strong>Run Now</strong> are disabled until at least one folder is selected.</li>
+            <li>Your selection is saved and restored each session.</li>
+          </ul>
+          <div class="help-tip">&#128161; Start with just your <strong>Inbox</strong>. Add more folders once you are confident in your rules.</div>
+        </div>
+
+        <div class="help-section">
+          <h3>&#128269; Step 2 &mdash; Discover Senders</h3>
+          <p>Click <strong>Discover Senders</strong> then <strong>Scan Folders</strong>. The extension reads every message in your selected folders and builds a deduplicated list of sending domains.</p>
+          <ul class="help-list">
+            <li><strong>Messages</strong> &mdash; total messages from that domain in the scanned folders.</li>
+            <li><strong>Unique addresses</strong> &mdash; how many distinct email addresses were seen for that domain. A high count suggests using Address match for precision.</li>
+            <li><strong>Match &mdash; Domain</strong> &mdash; matches any message from anyone at that domain.</li>
+            <li><strong>Match &mdash; Address</strong> &mdash; shows a dropdown of every address seen, sorted by message count. Only that address is matched.</li>
+            <li><strong>Age-Based</strong> &mdash; checked by default. Only matches messages older than N days. Blank uses the global default from My Rules Settings.</li>
+            <li>Senders already in rules show a green <em>&#10003; in rules</em> badge. Specific addresses already in rules are marked in the address dropdown.</li>
+          </ul>
+          <p>Use the <strong>Sort</strong> dropdown to put new senders (not yet in rules) at the top &mdash; the default after scanning. Check <strong>Include</strong> for each sender, then click <strong>&#10133; Add Selected to Rules</strong>.</p>
+        </div>
+
+        <div class="help-section">
+          <h3>&#128203; Step 3 &mdash; My Rules</h3>
+          <p>All saved rules appear here, sorted by root domain (<em>news.example.com</em> sorts under <em>example</em>). Each row:</p>
+          <ul class="help-list">
+            <li><strong>On</strong> &mdash; toggle a rule on or off without deleting it.</li>
+            <li><strong>Sender / Address</strong> &mdash; the domain or email address being matched. Click to edit. For address rules a dropdown of discovered addresses appears if a scan was done this session.</li>
+            <li><strong>Match badge</strong> &mdash; <em>&#127760; domain</em> (green) or <em>@ address</em> (blue). Click to toggle. Switching to Address pre-fills the most common discovered address; switching back to Domain extracts the domain automatically.</li>
+            <li><strong>Age-Based</strong> &mdash; only match messages older than N days. Enabled by default on new rules.</li>
+            <li><strong>Age (days)</strong> &mdash; per-rule override. Blank uses the global default.</li>
+            <li><strong>&#128206;</strong> &mdash; tick to skip messages that have attachments even if all other rule conditions match. Uses a post-scan API call per matched message.</li>
+          </ul>
+          <p><strong>Global Settings</strong>:</p>
+          <ul class="help-list">
+            <li><strong>Default delete age</strong> &mdash; used by any age-based rule with no per-sender override.</li>
+            <li><strong>On delete</strong> &mdash; <em>Move to Trash</em> (recommended; recoverable), <em>Move to Found folder</em> (created automatically per account; good for review), or <em>Permanently delete</em> (irreversible).</li>
+            <li><strong>Auto-run</strong> &mdash; apply all enabled rules silently each time Thunderbird starts.</li>
+            <li><strong>Exclude keywords</strong> &mdash; any message whose subject contains one of these words is protected from all rules. Press Enter or comma to add. Useful for receipts, invoices, shipping notices.</li>
+          </ul>
+          <p>Use <strong>Export JSON</strong> to back up rules and <strong>Import JSON</strong> to restore. The JSON file can be opened in any text editor for searching or manual editing.</p>
+          <div class="help-tip">&#128161; Use Found folder mode when testing new rules &mdash; review what was caught before committing to permanent deletion.</div>
+        </div>
+
+        <div class="help-section">
+          <h3>&#9654; Step 4 &mdash; Run</h3>
+          <p>The Run tab shows enabled rules, delete mode, and folders selected. Dry Run results are cached &mdash; Run Now immediately after reuses them with no second scan.</p>
+          <ul class="help-list">
+            <li><strong>&#128269; Dry Run</strong> &mdash; scans folders, applies rules, checks attachments where required, shows per-sender counts. Nothing is moved or deleted. Click any sender row to expand and see individual subjects, dates, folders, and a <em>&#128139; View</em> button to open the message in Thunderbird.</li>
+            <li><strong>&#9654; Run Now</strong> &mdash; reuses cached Dry Run IDs (no rescan), shows a confirmation, then moves or deletes.</li>
+          </ul>
+          <p>All rules are evaluated in a single folder pass &mdash; 200 rules over one folder reads each message once, not 200 times. The attachment check runs as a separate post-scan pass on matched messages only.</p>
+          <div class="help-tip">&#128161; Always expand Dry Run results and review matched messages before your first Run Now on any new rules.</div>
+        </div>
+
+        <div class="help-section">
+          <h3>&#9881;&#65039; Tips &amp; Best Practices</h3>
+          <ul class="help-list">
+            <li>Domain matching is boundary-anchored &mdash; <em>bank.com</em> matches <em>alerts@bank.com</em> but not <em>notbank.com</em>.</li>
+            <li>Use <strong>Address</strong> match to target one sender at a domain while keeping others (e.g. delete <em>alerts@chase.com</em>, keep <em>support@chase.com</em>).</li>
+            <li>Use <strong>Age-Based</strong> for banks, utilities, or senders where recent messages matter but history does not.</li>
+            <li>The &#128206; attachment filter is accurate but adds one API call per matched message. Use selectively.</li>
+            <li>Your rules JSON can be searched in any text editor &mdash; faster than scrolling the UI with hundreds of rules.</li>
+            <li>The Found folder is created automatically per account. If creation fails the run aborts &mdash; no messages are lost.</li>
+            <li>Clearing rules or deleting individual rows immediately updates Discover tab badges.</li>
+          </ul>
+        </div>
+
+        <div class="help-section help-disclaimer-section">
+          <h3>&#9888;&#65039; Disclaimer</h3>
+          <p>Smart Mail Cleanup is provided <strong>as-is, without warranty of any kind</strong>, express or implied. The author shall not be held liable for any data loss, unintended email deletion, or damages of any kind arising from the use or misuse of this extension.</p>
+          <ul class="help-list">
+            <li>You assume full responsibility for all rules created and all actions taken.</li>
+            <li>Always verify results with <strong>Dry Run</strong> before running, especially with new rules.</li>
+            <li>Use <strong>Trash</strong> or <strong>Found folder</strong> mode rather than Permanently Delete until fully confident in your rules.</li>
+            <li>Permanent deletion is irreversible. No recovery is possible once messages are permanently deleted.</li>
+            <li>This extension is provided for personal use without guarantee of support or maintenance.</li>
+          </ul>
+          <p>By using this extension you confirm that you have read, understood, and accepted these terms.</p>
+        </div>
+
+        <div class="help-section help-about-section">
+          <h3>&#8505;&#65039; About</h3>
+          <div class="about-grid">
+            <div class="about-logo-col">
+              <img src="icons/logo.png" class="about-logo" alt="Smart Mail Cleanup">
+            </div>
+            <div class="about-info-col">
+              <div class="about-row"><span class="about-label">Extension</span><span class="about-value">Smart Mail Cleanup</span></div>
+              <div class="about-row"><span class="about-label">Version</span><span class="about-value" id="about-version">&mdash;</span></div>
+              <div class="about-row"><span class="about-label">Author</span><span class="about-value">B. Moody</span></div>
+              <div class="about-row"><span class="about-label">License</span><span class="about-value">MIT &mdash; free to use, modify, and distribute</span></div>
+              <div class="about-row"><span class="about-label">Source</span><span class="about-value"><a href="https://github.com/fiteboss10/smart-mail-cleanup" target="_blank">github.com/fiteboss10/smart-mail-cleanup</a></span></div>
+              <div class="about-row"><span class="about-label">Issues</span><span class="about-value"><a href="https://github.com/fiteboss10/smart-mail-cleanup/issues" target="_blank">Report a bug or request a feature</a></span></div>
+              <div class="about-row"><span class="about-label">Listing</span><span class="about-value"><a href="https://addons.thunderbird.net/thunderbird/addon/smart-mail-cleanup/" target="_blank">addons.thunderbird.net</a></span></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </div><!-- .tab-body -->
+</main>
+
+<div id="status-bar" class="status-bar"></div>
+
+<div id="modal-overlay" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <h3 id="modal-title">Confirm</h3>
+    <p  id="modal-body"></p>
+    <div class="modal-buttons">
+      <button id="modal-cancel"  class="btn-secondary">Cancel</button>
+      <button id="modal-confirm" class="btn-danger">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Disclaimer Modal (first use only) ══ -->
+<div id="disclaimer-overlay" class="modal-overlay disclaimer-overlay" style="display:none">
+  <div class="modal disclaimer-modal">
+    <div class="disclaimer-logo-row">
+      <img src="icons/logo.png" class="disclaimer-logo" alt="Smart Mail Cleanup">
+      <div>
+        <h2 class="disclaimer-title">Smart Mail Cleanup</h2>
+        <p class="disclaimer-subtitle">Please read before continuing</p>
+      </div>
+    </div>
+
+    <div class="disclaimer-body">
+      <h3>Disclaimer &amp; Terms of Use</h3>
+
+      <p>Smart Mail Cleanup is provided <strong>as-is, without warranty of any kind</strong>, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, or non-infringement.</p>
+
+      <p><strong>You assume full responsibility</strong> for all rules you create and all actions taken by this extension. The author, B. Moody, shall not be held liable for any data loss, unintended email deletion, or damages of any kind arising from the use or misuse of this extension.</p>
+
+      <p>Email deletion is <strong>irreversible</strong> when Permanently Delete mode is selected. By using this extension you acknowledge that:</p>
+
+      <ul class="disclaimer-list">
+        <li>You will use <strong>Dry Run</strong> to verify results before every Run Now, especially when testing new rules.</li>
+        <li>You will use <strong>Move to Trash</strong> or <strong>Move to Found folder</strong> mode rather than Permanently Delete until you are fully confident in your rules.</li>
+        <li>You are solely responsible for reviewing the messages your rules match before committing to permanent deletion.</li>
+        <li>This extension is provided for personal use. No support, maintenance, or fitness for any particular purpose is guaranteed.</li>
+        <li>The author is not responsible for any consequences arising from the use of this extension, including but not limited to loss of email data.</li>
+      </ul>
+
+      <p>By clicking <strong>I Understand — Continue</strong> you accept these terms and acknowledge that you have read and understood this disclaimer.</p>
+    </div>
+
+    <div class="disclaimer-buttons">
+      <button id="disclaimer-reject" class="btn-secondary">Close Thunderbird</button>
+      <button id="disclaimer-accept" class="btn-primary">I Understand — Continue</button>
+    </div>
+  </div>
+</div>
+
+<script src="options.js"></script>
+</body>
+</html>
